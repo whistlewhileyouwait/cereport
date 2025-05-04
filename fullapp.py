@@ -85,28 +85,49 @@ def run_qr_scanner():
     name = person["name"] if person else badge_id
     st.success(f"✅ Scanned and checked in: {name}")
 
-def generate_ce_report_daily():
+def generate_ce_report(sessions):
+    """
+    sessions: list of { title, start, end } for the day you want to report on
+    """
     attendees = get_all_attendees()
     raw_logs  = get_scan_log()
 
-    # group scan dates by badge
-    dates_by = {}
+    # normalize timestamps into real datetimes (as before)…
+    norm_logs = []
     for e in raw_logs:
-        bid = e["badge_id"]
-        d = e["timestamp"].date()
-        dates_by.setdefault(bid, set()).add(d)
+        ts = e["timestamp"]
+        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
+            inner = ts[len("datetime.datetime("):-1]
+            ts = datetime.datetime.fromisoformat(inner)
+        elif isinstance(ts, str):
+            ts = datetime.datetime.fromisoformat(ts)
+        norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
 
+    # group by badge_id
+    scans_by = {}
+    for e in sorted(norm_logs, key=lambda x: x["timestamp"]):
+        scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
+
+    # parse only the sessions you passed in
+    parsed = [
+      (s["title"],
+       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
+       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
+      for s in sessions
+    ]
+
+    # build one row per attendee
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
         row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
-        # mark ✅ if they scanned at all that date
-        for s in conference_sessions:
-            sess_date = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M").date()
-            row[s["title"]] = "✅" if sess_date in dates_by.get(bid, ()) else ""
+        times = scans_by.get(bid, [])
+        for title, start, end in parsed:
+            row[title] = "✅" if any(start <= ts <= end for ts in times) else ""
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
+
 
 def generate_flattened_log():
     # 1) Fetch registered attendees
