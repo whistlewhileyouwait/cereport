@@ -125,7 +125,6 @@ def generate_flattened_log():
     attendees = get_all_attendees()   # list of dicts: { badge_id, name, email, … }
     attendee_map = { int(a["badge_id"]): a for a in attendees }
 
-    # 2) Fetch raw scans
     raw_scans = get_scan_log()        # list of { badge_id, name, email, timestamp }
 
     # 3) Group scans by badge_id (earliest → latest)
