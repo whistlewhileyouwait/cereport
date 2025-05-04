@@ -92,46 +92,45 @@ def run_qr_scanner():
 
 def generate_ce_report():
     attendees = get_all_attendees()
-    raw_logs  = get_scan_log()   # list of dicts with "badge_id" and datetime in "timestamp"
+    raw_logs  = get_scan_log()   # timestamps may be datetime or strings
 
-    # DEBUG: show a sample of raw_logs
-    st.write("── raw_logs sample ──")
-    st.write(raw_logs[:5])
-
-    # group by badge
-    scans_by = {}
+    # 1) Normalize every timestamp into a real datetime
+    norm_logs = []
     for e in raw_logs:
+        ts = e["timestamp"]
+        if isinstance(ts, str):
+            # strip wrapper if needed
+            if ts.startswith("datetime.datetime"):
+                inner = ts[len("datetime.datetime("):-1]
+                ts = datetime.datetime.fromisoformat(inner)
+            else:
+                ts = datetime.datetime.fromisoformat(ts)
+        norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
+
+    # 2) Group by badge
+    scans_by = {}
+    for e in sorted(norm_logs, key=lambda x: x["timestamp"]):
         scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
 
-    # parse sessions once
-    parsed = []
-    for s in conference_sessions:
-        start = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M")
-        end   = datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M")
-        parsed.append((s["title"], start, end))
-    # DEBUG: show parsed sessions
-    st.write("── parsed sessions ──")
-    st.write(parsed)
+    # 3) Parse sessions once
+    parsed = [
+      (s["title"],
+       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
+       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
+      for s in conference_sessions
+    ]
 
+    # 4) Build rows
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
-        times = scans_by.get(bid, [])
-        # DEBUG: show this attendee’s times
-        st.write(f"Badge {bid} times:", times)
-
         row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
+        times = scans_by.get(bid, [])
         for title, start, end in parsed:
-            hit = any(start <= t <= end for t in times)
-            # DEBUG: show comparison result
-            st.write(f"  {title}: any({start} ≤ t ≤ {end})? →", hit)
-            row[title] = "✅" if hit else ""
+            row[title] = "✅" if any(start <= ts <= end for ts in times) else ""
         rows.append(row)
 
-    df = pd.DataFrame(rows)
-    st.write("── CE report df ──")
-    st.write(df)
-    return df
+    return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
 
 def generate_flattened_log():
     # 1) Fetch registered attendees
