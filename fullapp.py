@@ -53,10 +53,6 @@ conference_sessions = [
 ]
 
 
-
-
-
-
 # ─── Utility functions ─────────────────────────────────────────────────────
 def generate_qr_code(badge_id: int) -> bytes:
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=5, border=2)
@@ -90,12 +86,10 @@ def run_qr_scanner():
     st.success(f"✅ Scanned and checked in: {name}")
 
 
-def generate_ce_report():
+
+def generate_ce_report(sessions):
     attendees = get_all_attendees()
     raw_logs  = get_scan_log()   # timestamps may be datetime or strings
-
-    # 1) Normalize every timestamp into a real datetime
-# normalize every timestamp into a real datetime
     norm_logs = []
     for e in raw_logs:
         ts = e["timestamp"]
@@ -108,9 +102,6 @@ def generate_ce_report():
             ts = datetime.datetime.fromisoformat(ts)
         # now ts is guaranteed a datetime
         norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
-
-
-    # 2) Group by badge
     scans_by = {}
     for e in sorted(norm_logs, key=lambda x: x["timestamp"]):
         scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
@@ -121,8 +112,7 @@ def generate_ce_report():
        datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
        datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
       for s in conference_sessions
-    ]
-
+    ]    
     # 4) Build rows
     rows = []
     for a in attendees:
