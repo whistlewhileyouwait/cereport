@@ -85,42 +85,25 @@ def run_qr_scanner():
     name = person["name"] if person else badge_id
     st.success(f"✅ Scanned and checked in: {name}")
 
-
-
-def generate_ce_report(sessions):
+def generate_ce_report_daily():
     attendees = get_all_attendees()
-    raw_logs  = get_scan_log()   # timestamps may be datetime or strings
-    norm_logs = []
-    for e in raw_logs:
-        ts = e["timestamp"]
-        # if it’s still a repr‑string, strip wrapper
-        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
-            inner = ts[len("datetime.datetime("):-1]
-            ts = datetime.datetime.fromisoformat(inner)
-        # if it’s an ISO string
-        elif isinstance(ts, str):
-            ts = datetime.datetime.fromisoformat(ts)
-        # now ts is guaranteed a datetime
-        norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
-    scans_by = {}
-    for e in sorted(norm_logs, key=lambda x: x["timestamp"]):
-        scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
+    raw_logs  = get_scan_log()
 
-    # 3) Parse sessions once
-    parsed = [
-      (s["title"],
-       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
-       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
-      for s in conference_sessions
-    ]    
-    # 4) Build rows
+    # group scan dates by badge
+    dates_by = {}
+    for e in raw_logs:
+        bid = e["badge_id"]
+        d = e["timestamp"].date()
+        dates_by.setdefault(bid, set()).add(d)
+
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
         row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
-        times = scans_by.get(bid, [])
-        for title, start, end in parsed:
-            row[title] = "✅" if any(start <= ts <= end for ts in times) else ""
+        # mark ✅ if they scanned at all that date
+        for s in conference_sessions:
+            sess_date = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M").date()
+            row[s["title"]] = "✅" if sess_date in dates_by.get(bid, ()) else ""
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
