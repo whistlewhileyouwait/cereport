@@ -95,17 +95,20 @@ def generate_ce_report():
     raw_logs  = get_scan_log()   # timestamps may be datetime or strings
 
     # 1) Normalize every timestamp into a real datetime
+# normalize every timestamp into a real datetime
     norm_logs = []
     for e in raw_logs:
         ts = e["timestamp"]
-        if isinstance(ts, str):
-            # strip wrapper if needed
-            if ts.startswith("datetime.datetime"):
-                inner = ts[len("datetime.datetime("):-1]
-                ts = datetime.datetime.fromisoformat(inner)
-            else:
-                ts = datetime.datetime.fromisoformat(ts)
+        # if it’s still a repr‑string, strip wrapper
+        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
+            inner = ts[len("datetime.datetime("):-1]
+            ts = datetime.datetime.fromisoformat(inner)
+        # if it’s an ISO string
+        elif isinstance(ts, str):
+            ts = datetime.datetime.fromisoformat(ts)
+        # now ts is guaranteed a datetime
         norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
+
 
     # 2) Group by badge
     scans_by = {}
