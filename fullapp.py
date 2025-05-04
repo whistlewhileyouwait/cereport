@@ -92,17 +92,20 @@ def generate_ce_report_by_date(sessions_for_day):
     """
     attendees = get_all_attendees()
     raw_logs  = get_scan_log()
-
-    # build a set of (badge_id, date) for every scan
-    scanned_dates = set()
-    for e in raw_logs:
-        ts = e["timestamp"]
-        # ensure ts is datetime
-        if isinstance(ts, str):
-            ts = datetime.datetime.fromisoformat(ts.strip("datetime.datetime()"))
-        d = ts.date()
-        scanned_dates.add((e["badge_id"], d))
-
+  # build a set of (badge_id:int, date) for every scan
++    scanned_dates = set()
++    for e in raw_logs:
++        bid = int(e["badge_id"])               # ← cast to int
++        ts = e["timestamp"]
++        if isinstance(ts, str):
++            # if it’s wrapped like "datetime.datetime(…)" strip the wrapper
++            if ts.startswith("datetime.datetime"):
++                inner = ts[len("datetime.datetime("):-1]
++                ts = datetime.datetime.fromisoformat(inner)
++            else:
++                ts = datetime.datetime.fromisoformat(ts)
++        d = ts.date()
++        scanned_dates.add((bid, d))
     # build report rows
     rows = []
     for a in attendees:
@@ -114,6 +117,9 @@ def generate_ce_report_by_date(sessions_for_day):
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
+
+
+
 
 
 def generate_flattened_log():
