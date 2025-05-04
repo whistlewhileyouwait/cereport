@@ -226,8 +226,6 @@ elif st.session_state.page == 'admin':
         switch_page('home')
 
     st.subheader("👥 All Registered Attendees")
-
-    # 1) Fetch attendees & raw scan log
     attendees = get_all_attendees()   # list of dicts with int badge_id
     logs      = get_scan_log()        # list of dicts with badge_id (str), timestamp (datetime or repr)
 
