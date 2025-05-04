@@ -84,72 +84,55 @@ def run_qr_scanner():
     person = next((p for p in people if p["badge_id"] == int(badge_id)), None)
     name = person["name"] if person else badge_id
     st.success(f"✅ Scanned and checked in: {name}")
+st.subheader("📅 Daily Punch Report")
 
 
-def generate_ce_report_with_intervals(sessions_for_day):
-    raw_logs = get_scan_log()
 
-    # 1) Build and sort timestamps per badge
-    scans_by = {}
+
+def generate_punch_report():
+    attendees = get_all_attendees()    # list of { badge_id, name, email, … }
+    raw_logs  = get_scan_log()         # list of { badge_id, timestamp }
+
+    # 2) normalize timestamps to datetime
+    norm = []
     for e in raw_logs:
         bid = int(e["badge_id"])
         ts  = e["timestamp"]
-        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
-            inner = ts[len("datetime.datetime("):-1]
-            ts = datetime.datetime.fromisoformat(inner)
-        elif isinstance(ts, str):
-            ts = datetime.datetime.fromisoformat(ts)
-        scans_by.setdefault(bid, []).append(ts)
-    for times in scans_by.values():
-        times.sort()
+        if isinstance(ts, str):
+            # strip the “datetime.datetime(...)” wrapper if present
+            if ts.startswith("datetime.datetime"):
+                inner = ts[len("datetime.datetime("):-1]
+                ts = datetime.datetime.fromisoformat(inner)
+            else:
+                ts = datetime.datetime.fromisoformat(ts)
+        norm.append({"badge_id": bid, "timestamp": ts})
 
-    # DEBUG (optional)
-    dbg_id = next(iter(scans_by.keys()), None)
-    if dbg_id is not None:
-        st.write("→ raw timestamps for", dbg_id, ":", scans_by.get(dbg_id))
+    # 3) group by badge_id and date → list of timestamps
+    from collections import defaultdict
+    scans_by_date = defaultdict(list)
+    for e in norm:
+        d = e["timestamp"].date()
+        scans_by_date[(e["badge_id"], d)].append(e["timestamp"])
 
-    # 2) Build in/out intervals
-    intervals_by = {}
-    for bid, times in scans_by.items():
-        intervals = []
-        for i in range(0, len(times), 2):
-            start = times[i]
-            end   = times[i+1] if i+1 < len(times) else datetime.datetime.combine(start.date(), datetime.time(23,59,59))
-            intervals.append((start, end))
-        intervals_by[bid] = intervals
-    if dbg_id is not None:
-        st.write("→ intervals for", dbg_id, ":", intervals_by.get(dbg_id))
-
-    # 3) Parse sessions you passed in
-    parsed = []
-    for s in sessions_for_day:
-        s_start = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M")
-        s_end   = datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M")
-        parsed.append((s["title"], s_start, s_end))
-    st.write("→ sessions_for_day:", parsed)
-
-    # 4) Show overlap tests for debug
-    if dbg_id is not None:
-        for title, s_start, s_end in parsed:
-            overlaps = any(iv_start < s_end and iv_end > s_start
-                           for iv_start, iv_end in intervals_by.get(dbg_id, []))
-            st.write(f"{title}: overlap? {overlaps}")
-
-    # 5) Build the CE‑report rows and return a DataFrame
+    # 4) build rows: for each (badge, date) compute min & max
     rows = []
-    attendees = get_all_attendees()
-    for a in attendees:
-        bid = int(a["badge_id"])
-        row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
-        intervals = intervals_by.get(bid, [])
-        for title, s_start, s_end in parsed:
-            attended = any(iv_start < s_end and iv_end > s_start for iv_start, iv_end in intervals)
-            row[title] = "✅" if attended else ""
-        rows.append(row)
+    # build a lookup for name/email
+    info = { int(a["badge_id"]): (a["name"], a["email"]) for a in attendees }
+    for (bid, d), times in sorted(scans_by_date.items()):
+        times.sort()
+        check_in  = times[0].strftime("%H:%M:%S")
+        check_out = times[-1].strftime("%H:%M:%S")
+        name, email = info.get(bid, ("<unknown>", ""))
+        rows.append({
+            "Badge ID": bid,
+            "Name":      name,
+            "Email":     email,
+            "Date":      d.isoformat(),
+            "Check‑In":  check_in,
+            "Check‑Out": check_out
+        })
 
-    return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
-
-
+    return pd.DataFrame(rows).sort_values(["Date","Badge ID"]).reset_index(drop=True)
 def generate_flattened_log():
     # 1) Fetch registered attendees
     attendees = get_all_attendees()   # list of dicts: { badge_id, name, email, … }
@@ -298,51 +281,6 @@ elif st.session_state.page == 'admin':
 
     st.markdown("---")
 
-    # ─── CE Credit report ───────────────────────────────────────────────────────
-    st.subheader("📜 CE Credit Attendance Report")
-
-    # Conference dates
-    min_date = datetime.date(2025, 5, 2)
-    max_date = datetime.date(2025, 5, 4)
-
-    # Default to today if it’s in range, otherwise the first conference day
-    today = datetime.date.today()
-    default_date = today if min_date <= today <= max_date else min_date
-
-    # Let the user pick a date within the conference window
-    selected_date = st.date_input(
-        "Select conference date",
-        value=default_date,
-        min_value=min_date,
-        max_value=max_date,
-    )
-
-    # Filter sessions to that day
-    sessions_for_day = [
-        s for s in conference_sessions
-        if datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M").date()
-        == selected_date
-    ]
-
-    if not sessions_for_day:
-        st.info(f"No sessions scheduled for {selected_date}.")
-    else:
-        df_ce = generate_ce_report_with_intervals(sessions_for_day)
-        st.dataframe(df_ce)
-        st.download_button(
-            "📥 Download CE Credit Report",
-            data=df_ce.to_csv(index=False).encode("utf-8"),
-            file_name=f"ce_report_{selected_date}.csv",
-            mime="text/csv"
-        )
-        # … after your CE‐report block …
-        if st.button("💾 Save CE Report to Supabase"):
-            from database import save_ce_report
-            save_ce_report(df_ce, selected_date)
-            st.success(f"CE report for {selected_date} saved ({len(df_ce)} attendees).")
-
-    st.markdown("---")
-
     st.subheader("📊 Raw Attendance Log")
     raw = get_scan_log()
     df_raw = pd.DataFrame(raw)
@@ -354,9 +292,35 @@ elif st.session_state.page == 'admin':
 )
 
 
-# — your usual init —
+    # — your usual init —
 load_dotenv()
 supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+    st.subheader("📅 Daily Punch Report")
+    df_punch = generate_punch_report()
+
+    # 2) define a Styler that highlights rows where Check‑In == Check‑Out
+    def highlight_missed(row):
+    # if only one scan, Check‑In == Check‑Out
+        if row["Check‑In"] == row["Check‑Out"]:
+        # paint the entire row light red
+            return ["background-color: #ffcccc"] * len(row)
+        else:
+            return [""] * len(row)
+
+# 3) apply the style
+    styled = df_punch.style.apply(highlight_missed, axis=1)
+
+# 4) display the styled table
+    st.dataframe(styled)
+
+# 5) still allow download of the raw CSV
+    st.download_button(
+        "📥 Download Punch Report",
+        data=df_punch.to_csv(index=False).encode("utf-8"),
+        file_name="punch_report.csv",
+        mime="text/csv"
+    )
 
 def get_next_badge_id():
     # pull the single highest badge_id, descending, limit=1
