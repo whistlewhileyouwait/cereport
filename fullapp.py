@@ -85,45 +85,32 @@ def run_qr_scanner():
     name = person["name"] if person else badge_id
     st.success(f"✅ Scanned and checked in: {name}")
 
-def generate_ce_report(sessions):
+def generate_ce_report_by_date(sessions_for_day):
     """
-    sessions: list of { title, start, end } for the day you want to report on
+    sessions_for_day: list of { title, start, end } for one date
+    Marks ✅ if the attendee scanned at any time on that session’s date.
     """
     attendees = get_all_attendees()
     raw_logs  = get_scan_log()
 
-    # normalize timestamps into real datetimes (as before)…
-    norm_logs = []
+    # build a set of (badge_id, date) for every scan
+    scanned_dates = set()
     for e in raw_logs:
         ts = e["timestamp"]
-        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
-            inner = ts[len("datetime.datetime("):-1]
-            ts = datetime.datetime.fromisoformat(inner)
-        elif isinstance(ts, str):
-            ts = datetime.datetime.fromisoformat(ts)
-        norm_logs.append({"badge_id": e["badge_id"], "timestamp": ts})
+        # ensure ts is datetime
+        if isinstance(ts, str):
+            ts = datetime.datetime.fromisoformat(ts.strip("datetime.datetime()"))
+        d = ts.date()
+        scanned_dates.add((e["badge_id"], d))
 
-    # group by badge_id
-    scans_by = {}
-    for e in sorted(norm_logs, key=lambda x: x["timestamp"]):
-        scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
-
-    # parse only the sessions you passed in
-    parsed = [
-      (s["title"],
-       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
-       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
-      for s in sessions
-    ]
-
-    # build one row per attendee
+    # build report rows
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
         row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
-        times = scans_by.get(bid, [])
-        for title, start, end in parsed:
-            row[title] = "✅" if any(start <= ts <= end for ts in times) else ""
+        for s in sessions_for_day:
+            sess_date = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M").date()
+            row[s["title"]] = "✅" if (bid, sess_date) in scanned_dates else ""
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
