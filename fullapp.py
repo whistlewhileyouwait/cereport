@@ -90,44 +90,34 @@ def run_qr_scanner():
     st.success(f"✅ Scanned and checked in: {name}")
 
 
-def generate_ce_report(sessions=None):
-    """
-    Given a list of session dicts (with 'title','start','end'),
-    returns a DataFrame marking ✅ for each attendee who scanned
-    during each session window.
-    """
-    if sessions is None:
-        sessions = conference_sessions
+def generate_ce_report():
+    attendees = get_all_attendees()
+    raw_logs  = get_scan_log()   # now returns real datetimes
 
-    logs = get_scan_log()  # list of {badge_id, name, email, timestamp}
-    rows = {}
+    # group by badge
+    scans_by = {}
+    for e in raw_logs:
+        scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
 
-    for log in logs:
-        bid, ts = log["badge_id"], log["timestamp"]
+    # parse sessions once
+    parsed = [
+      (s["title"],
+       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
+       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
+      for s in conference_sessions
+    ]
 
-        # initialize this attendee’s row
-        if bid not in rows:
-            rows[bid] = {
-                "Badge ID": bid,
-                "Name":     log["name"],
-                "Email":    log["email"]
-            }
-            for sess in sessions:
-                rows[bid][sess["title"]] = ""
+    rows = []
+    for a in attendees:
+        bid = int(a["badge_id"])
+        row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
+        times = scans_by.get(bid, [])
+        for title, start, end in parsed:
+            row[title] = "✅" if any(start <= t <= end for t in times) else ""
+        rows.append(row)
 
-        # check each session window
-        for sess in sessions:
-            start = datetime.datetime.strptime(sess["start"], "%Y-%m-%d %H:%M")
-            end   = datetime.datetime.strptime(sess["end"],   "%Y-%m-%d %H:%M")
-            if start <= ts <= end:
-                rows[bid][sess["title"]] = "✅"
+    return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
 
-    # ensure all session columns exist for everyone
-    for bid in rows:
-        for sess in sessions:
-            rows[bid].setdefault(sess["title"], "")
-
-    return pd.DataFrame(rows.values())
 
 
 def generate_flattened_log():
