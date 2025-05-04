@@ -88,28 +88,28 @@ def run_qr_scanner():
 import datetime
 import pandas as pd
 
-def generate_ce_report_with_intervals(sessions_for_day):
-    attendees = get_all_attendees()      # list of {badge_id,name,email}
-    raw_logs  = get_scan_log()           # list of {badge_id, timestamp}
 
-    # 1) Normalize timestamps & group by badge
+def generate_ce_report_with_intervals(sessions_for_day):
+    attendees = get_all_attendees()
+    raw_logs  = get_scan_log()
+
+    # build sorted lists of timestamps per badge
     scans_by = {}
     for e in raw_logs:
         bid = int(e["badge_id"])
         ts  = e["timestamp"]
-        if isinstance(ts, str):
-            # strip wrapper if present
-            if ts.startswith("datetime.datetime"):
-                inner = ts[len("datetime.datetime("):-1]
-                ts = datetime.datetime.fromisoformat(inner)
-            else:
-                ts = datetime.datetime.fromisoformat(ts)
+        if isinstance(ts, str) and ts.startswith("datetime.datetime"):
+            inner = ts[len("datetime.datetime("):-1]
+            ts = datetime.datetime.fromisoformat(inner)
+        elif isinstance(ts, str):
+            ts = datetime.datetime.fromisoformat(ts)
         scans_by.setdefault(bid, []).append(ts)
+    for times in scans_by.values():
+        times.sort()
 
-    # 2) Build in/out intervals for each badge
+    # build in/out intervals
     intervals_by = {}
     for bid, times in scans_by.items():
-        times.sort()
         intervals = []
         for i in range(0, len(times), 2):
             start = times[i]
@@ -117,26 +117,23 @@ def generate_ce_report_with_intervals(sessions_for_day):
             intervals.append((start, end))
         intervals_by[bid] = intervals
 
-    # 3) Parse the sessions you’re reporting on
+    # parse sessions
     parsed = [
-      (
-        s["title"],
-        datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
-        datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M")
-      )
+      (s["title"],
+       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
+       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
       for s in sessions_for_day
     ]
 
-    # 4) For each attendee, check if any interval overlaps each session
+    # for each attendee, mark ✅ if any interval overlaps the session
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
         row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
-        intervals = intervals_by.get(bid, [])
         for title, s_start, s_end in parsed:
-            # overlapping if interval.start < session_end AND interval.end > session_start
-            attended = any(iv_start < s_end and iv_end > s_start for iv_start, iv_end in intervals)
-            row[title] = "✅" if attended else ""
+            overlaps = any(iv_start < s_end and iv_end > s_start
+                           for iv_start, iv_end in intervals_by.get(bid, []))
+            row[title] = "✅" if overlaps else ""
         rows.append(row)
 
     return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
