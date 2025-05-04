@@ -79,10 +79,9 @@ def get_scan_log():
     logs = []
     for sc in scans:
         raw_ts = sc["timestamp"]            # e.g. "2025-05-02T08:35:12Z"
-        # strip trailing Z, parse as UTC naïve
-        if raw_ts.endswith("Z"):
-            raw_ts = raw_ts[:-1]
-        ts = datetime.datetime.fromisoformat(raw_ts)
+        if isinstance(raw_ts, str) and raw_ts.endswith("Z"):
+        raw_ts = raw_ts[:-1]
+        ts = datetime.datetime.fromisoformat(raw_ts).replace(tzinfo=None)
         logs.append({
             "badge_id":  sc["badge_id"],
             "name":       "",  # we only need badge_id/timestamp here
@@ -90,6 +89,8 @@ def get_scan_log():
             "timestamp": ts
         })
     return logs
+
+
 
 def save_ce_report(df: pd.DataFrame, report_date: datetime.date):
     """
