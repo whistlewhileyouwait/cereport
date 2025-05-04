@@ -299,7 +299,7 @@ elif st.session_state.page == 'admin':
         st.info(f"No sessions scheduled for {selected_date}.")
     else:
         # Generate & display the report for just those sessions
-        df_ce = generate_ce_report(sessions_for_day)
+        df_ce = generate_ce_report()
         st.dataframe(df_ce)
         st.download_button(
             "📥 Download CE Credit Report",
