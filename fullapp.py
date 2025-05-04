@@ -28,7 +28,7 @@ from database import (
 # ─── Page‑swap helper (only once) ─────────────────────────────────────────
 def switch_page(page_name: str):
     st.session_state.page = page_name
-    st.experimental_rerun()
+
 
 # ─── Init page state ────────────────────────────────────────────────────────
 if 'page' not in st.session_state:
