@@ -12,10 +12,11 @@ from supabase import create_client, Client
 from database import get_all_attendees, log_scan
 from database import get_scan_log
 
-# Load environment variables
+# ─── Load .env & initialize Supabase client ───────────────────────────────
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 from database import (
     register_attendee,
@@ -24,9 +25,14 @@ from database import (
     get_scan_log,
 )
 
+# ─── Page‑swap helper (only once) ─────────────────────────────────────────
 def switch_page(page_name: str):
     st.session_state.page = page_name
     st.experimental_rerun()
+
+# ─── Init page state ────────────────────────────────────────────────────────
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -47,34 +53,8 @@ conference_sessions = [
 ]
 
 
-# ─── Load .env & initialize Supabase client ───────────────────────────────
-load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ─── Import your database helper wrappers ──────────────────────────────────
-from database import (
-    register_attendee,
-    get_all_attendees,
-    log_scan,
-    get_scan_log,
-)
 
-# ─── Page‑swap helper ───────────────────────────────────────────────────────
-def switch_page(page_name: str):
-    st.session_state.page = page_name
-
-# ─── Conference sessions ───────────────────────────────────────────────────
-conference_sessions = [
-    {"title": "Prevention of C.M.", "start": "2025-05-02 08:30", "end": "2025-05-02 10:00"},
-    {"title": "The TDCJ SO Treatment Program", "start": "2025-05-02 10:30", "end": "2025-05-02 12:00"},
-    # …and the rest of your sessions…
-]
-
-# ─── Init page state ────────────────────────────────────────────────────────
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
 
 
 # ─── Utility functions ─────────────────────────────────────────────────────
@@ -95,18 +75,11 @@ def run_qr_scanner():
         return
 
     img = Image.open(img_file).convert("RGB")
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    data, points, _ = qr_detector.detectAndDecode(gray)
-    if data:
-        try:
-            badge = int(data)
-        except ValueError:
-            st.warning(f"Unrecognized QR payload: {data}")
-        else:
-            log_scan(badge)
-            st.success(f"✅ Checked in: {badge}")
-    else:
+    gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+    data, _, _ = cv2.QRCodeDetector().detectAndDecode(gray)
+    if not data:
         st.warning("⚠ QR Code not recognized.")
+        return
 
     badge_id = data.strip()
     log_scan(badge_id)
