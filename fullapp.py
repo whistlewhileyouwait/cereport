@@ -88,6 +88,7 @@ def run_qr_scanner():
 
 def generate_ce_report_with_intervals(sessions_for_day):
     raw_logs = get_scan_log()
+
     # 1) Build and sort timestamps per badge
     scans_by = {}
     for e in raw_logs:
@@ -99,13 +100,15 @@ def generate_ce_report_with_intervals(sessions_for_day):
         elif isinstance(ts, str):
             ts = datetime.datetime.fromisoformat(ts)
         scans_by.setdefault(bid, []).append(ts)
-    for bid, times in scans_by.items():
+    for times in scans_by.values():
         times.sort()
-    # DEBUG: show the intervals you’ll build for badge “72” (or pick an ID you know)
-    dbg_id = 72
-    st.write("→ raw timestamps for", dbg_id, ":", scans_by.get(dbg_id))
-    
-    # 2) Build intervals
+
+    # DEBUG (optional)
+    dbg_id = next(iter(scans_by.keys()), None)
+    if dbg_id is not None:
+        st.write("→ raw timestamps for", dbg_id, ":", scans_by.get(dbg_id))
+
+    # 2) Build in/out intervals
     intervals_by = {}
     for bid, times in scans_by.items():
         intervals = []
@@ -114,23 +117,38 @@ def generate_ce_report_with_intervals(sessions_for_day):
             end   = times[i+1] if i+1 < len(times) else datetime.datetime.combine(start.date(), datetime.time(23,59,59))
             intervals.append((start, end))
         intervals_by[bid] = intervals
-    st.write("→ intervals for", dbg_id, ":", intervals_by.get(dbg_id))
-    
-    # 3) parse the sessions you passed in
+    if dbg_id is not None:
+        st.write("→ intervals for", dbg_id, ":", intervals_by.get(dbg_id))
+
+    # 3) Parse sessions you passed in
     parsed = []
     for s in sessions_for_day:
         s_start = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M")
         s_end   = datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M")
         parsed.append((s["title"], s_start, s_end))
     st.write("→ sessions_for_day:", parsed)
-    
-    # 4) show overlap tests for that one badge
-    for title, s_start, s_end in parsed:
-        overlaps = any(iv_start < s_end and iv_end > s_start
-                       for iv_start, iv_end in intervals_by.get(dbg_id, []))
-        st.write(f"{title}: overlap? {overlaps}")
-    
-    # …then your normal build‑rows logic…
+
+    # 4) Show overlap tests for debug
+    if dbg_id is not None:
+        for title, s_start, s_end in parsed:
+            overlaps = any(iv_start < s_end and iv_end > s_start
+                           for iv_start, iv_end in intervals_by.get(dbg_id, []))
+            st.write(f"{title}: overlap? {overlaps}")
+
+    # 5) Build the CE‑report rows and return a DataFrame
+    rows = []
+    attendees = get_all_attendees()
+    for a in attendees:
+        bid = int(a["badge_id"])
+        row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
+        intervals = intervals_by.get(bid, [])
+        for title, s_start, s_end in parsed:
+            attended = any(iv_start < s_end and iv_end > s_start for iv_start, iv_end in intervals)
+            row[title] = "✅" if attended else ""
+        rows.append(row)
+
+    return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
+
 
 def generate_flattened_log():
     # 1) Fetch registered attendees
