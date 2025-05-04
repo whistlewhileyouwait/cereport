@@ -92,7 +92,11 @@ def run_qr_scanner():
 
 def generate_ce_report():
     attendees = get_all_attendees()
-    raw_logs  = get_scan_log()   # now returns real datetimes
+    raw_logs  = get_scan_log()   # list of dicts with "badge_id" and datetime in "timestamp"
+
+    # DEBUG: show a sample of raw_logs
+    st.write("── raw_logs sample ──")
+    st.write(raw_logs[:5])
 
     # group by badge
     scans_by = {}
@@ -100,25 +104,34 @@ def generate_ce_report():
         scans_by.setdefault(e["badge_id"], []).append(e["timestamp"])
 
     # parse sessions once
-    parsed = [
-      (s["title"],
-       datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M"),
-       datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M"))
-      for s in conference_sessions
-    ]
+    parsed = []
+    for s in conference_sessions:
+        start = datetime.datetime.strptime(s["start"], "%Y-%m-%d %H:%M")
+        end   = datetime.datetime.strptime(s["end"],   "%Y-%m-%d %H:%M")
+        parsed.append((s["title"], start, end))
+    # DEBUG: show parsed sessions
+    st.write("── parsed sessions ──")
+    st.write(parsed)
 
     rows = []
     for a in attendees:
         bid = int(a["badge_id"])
-        row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
         times = scans_by.get(bid, [])
+        # DEBUG: show this attendee’s times
+        st.write(f"Badge {bid} times:", times)
+
+        row = {"Badge ID": bid, "Name": a["name"], "Email": a["email"]}
         for title, start, end in parsed:
-            row[title] = "✅" if any(start <= t <= end for t in times) else ""
+            hit = any(start <= t <= end for t in times)
+            # DEBUG: show comparison result
+            st.write(f"  {title}: any({start} ≤ t ≤ {end})? →", hit)
+            row[title] = "✅" if hit else ""
         rows.append(row)
 
-    return pd.DataFrame(rows).sort_values("Badge ID").reset_index(drop=True)
-
-
+    df = pd.DataFrame(rows)
+    st.write("── CE report df ──")
+    st.write(df)
+    return df
 
 def generate_flattened_log():
     # 1) Fetch registered attendees
