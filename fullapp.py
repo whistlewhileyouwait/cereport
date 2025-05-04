@@ -288,37 +288,30 @@ elif st.session_state.page == 'admin':
     df_raw.to_csv(index=False).encode("utf-8"),
     file_name="raw_attendance.csv"
 )
-
-
-    # — your usual init —
-load_dotenv()
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-
+    st.markdown("---")
+    
     st.subheader("📅 Daily Punch Report")
     df_punch = generate_punch_report()
 
-    # 2) define a Styler that highlights rows where Check‑In == Check‑Out
+    # highlight any row where Check‑In == Check‑Out
     def highlight_missed(row):
-    # if only one scan, Check‑In == Check‑Out
-        if row["Check‑In"] == row["Check‑Out"]:
-        # paint the entire row light red
-            return ["background-color: #ffcccc"] * len(row)
-        else:
-            return [""] * len(row)
+        return ["background-color: #ffcccc" if row["Check‑In"] == row["Check‑Out"] else "" 
+                for _ in row]
 
-# 3) apply the style
     styled = df_punch.style.apply(highlight_missed, axis=1)
-
-# 4) display the styled table
     st.dataframe(styled)
 
-# 5) still allow download of the raw CSV
     st.download_button(
         "📥 Download Punch Report",
         data=df_punch.to_csv(index=False).encode("utf-8"),
         file_name="punch_report.csv",
         mime="text/csv"
     )
+
+
+    # — your usual init —
+load_dotenv()
+supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
 def get_next_badge_id():
     # pull the single highest badge_id, descending, limit=1
