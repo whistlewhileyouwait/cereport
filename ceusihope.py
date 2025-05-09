@@ -19,14 +19,12 @@ from database import get_all_attendees, get_scan_log
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Pull attendee list
-
 
 attendees_data = pd.DataFrame(get_all_attendees())
-
+    if attendees_data.empty:
+        st.error("⚠️ No attendees found in the database. Please check your Supabase connection.")
+        st.stop()
 scan_data = pd.DataFrame(get_scan_log())
-st.write("📋 Columns in attendees_data:", attendees_data.columns.tolist())
-st.dataframe(attendees_data.head())
 
 
 # ─── Sessions Info ─────────────────────────────────────
@@ -48,7 +46,7 @@ sessions = [
 st.title("🎓 CEU Certificate Generator")
 badge_ids = sorted(attendees_data["badge_id"].astype(int).unique())
 selected_badge = st.selectbox("Select attendee by badge number:", badge_ids)
-
+    
 selected_row = attendees_data[attendees_data["badge_id"] == selected_badge].iloc[0]
 name = selected_row["name"]
 email = selected_row.get("email", "no-email@example.com")
